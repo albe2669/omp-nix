@@ -1,7 +1,7 @@
 {
   "version": "16.3.11",
   "srcHash": "sha256-pSB62I+idIEXnjaVL9MP2Lvdq31NNrWSaYVL/8u+YO8=",
-  "cargoHash": "sha256-Oy4xCMX/MA8c1UoC63a7eLEHF1N9BZ75fFjRcuL+yNE=",
+  "cargoHash": "sha256-tBBZSEOHogOw1/xEHf+bupHN8ABwrI5PEv9VC4BIsps=",
   "bunVersion": "1.3.14",
   "platforms": {
     "x86_64-linux": {
