@@ -6,6 +6,7 @@
   fetchurl,
   rustPlatform,
   bun,
+  biome,
   unzip,
   nodejs,
   pkg-config,
@@ -114,8 +115,7 @@ in
   stdenvNoCC.mkDerivation {
     pname = "omp";
     inherit version src;
-
-    nativeBuildInputs = [bun unzip];
+    nativeBuildInputs = [bun unzip biome];
 
     # bun build --compile appends a payload past the ELF section table.
     # The default fixup phase's strip/patchelf rewrites section headers
@@ -132,6 +132,11 @@ in
       # read-only store path cannot have workspace links added to it).
       cp -r ${bunDeps} node_modules
       chmod -R u+w node_modules
+      # Ensure `bunx biome` resolves to the nixpkgs biome binary. The FOD's
+      # node_modules/.bin/biome symlink may be missing or point to a native
+      # binary that wasn't patchelf'd (stdenvNoCC FOD skips autoPatchelf).
+      mkdir -p node_modules/.bin
+      ln -sf ${biome}/bin/biome node_modules/.bin/biome
 
       # Recreate workspace package symlinks that bun install created but that
       # were stripped from bunDeps. Read each packages/*/package.json for the
