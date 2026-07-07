@@ -21,9 +21,7 @@
       "aarch64-darwin"
     ];
 
-    overlay = final: prev: {
-      omp = final.callPackage ./pkgs/omp {};
-    };
+    overlay = final: prev: (import ./pkgs/default.nix { pkgs = final; lib = final.lib; });
   in
     {
       overlays.default = overlay;
