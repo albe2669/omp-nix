@@ -7,6 +7,7 @@
   rustPlatform,
   bun,
   unzip,
+  patchelf,
   nodejs,
   pkg-config,
   openssl,
@@ -114,7 +115,7 @@ in
   stdenvNoCC.mkDerivation {
     pname = "omp";
     inherit version src;
-    nativeBuildInputs = [bun unzip];
+    nativeBuildInputs = [bun unzip patchelf];
 
     # bun build --compile appends a payload past the ELF section table.
     # The default fixup phase's strip/patchelf rewrites section headers
@@ -155,6 +156,16 @@ in
       mkdir -p packages/natives/native
       cp ${nativesAddon}/lib/pi_natives.${platformSpecific.node}.node \
          packages/natives/native/
+
+      # Patch the native biome CLI binary (used by generate-legacy-pi-bundled-
+      # registry.ts via `bunx biome check --write`). The FOD uses stdenvNoCC
+      # which skips autoPatchelf, so on Linux the ELF binary has no interpreter.
+      for biome_bin in node_modules/@biomejs/cli-*/biome; do
+        [ -f "$biome_bin" ] || continue
+        if file "$biome_bin" | grep -q "ELF"; then
+          patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" "$biome_bin" 2>/dev/null || true
+        fi
+      done
 
       # Generate build-time artefacts required by bun build --compile.
       # 1. Embed native .node into a tar.gz + generate embedded-addon.js shim.
