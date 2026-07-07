@@ -2,7 +2,7 @@ name: Build and Test
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
     paths:
       - 'flake.nix'
@@ -14,7 +14,7 @@ on:
     workflows: ["Update omp Version"]
     types:
       - completed
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 concurrency:
