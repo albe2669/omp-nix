@@ -9,13 +9,10 @@
   programs.omp = {
     enable = true;
 
-    # Load API keys from file paths into environment variables.
-    # The omp binary is wrapped to export these at runtime.
-    # Reference the env var names in your providers config below.
-    apiKeyFiles = {
-      OPENAI_API_KEY = ./secrets/openai-key;
-      ANTHROPIC_API_KEY = ./secrets/anthropic-key;
-    };
+    # API keys are loaded from file paths at runtime. Set `apiKeyFile`
+    # on each provider; the module generates a deterministic env var
+    # (OMP_<PROVIDER>_API_KEY) and wraps the binary to export it.
+    # Works with sops-nix, agenix, or any secrets manager.
 
     settings = {
       modelRoles = {
@@ -76,13 +73,12 @@
     };
 
     # Providers and models — written to ~/.omp/agent/models.yml.
-    # The `apiKey` field is an environment variable name (not the key
-    # itself). The env var is populated from the file path in
-    # `apiKeyFiles` above via a binary wrapper.
+    # Set `apiKeyFile` to load the key from a file at runtime. The module
+    # generates env var OMP_<PROVIDER>_API_KEY and sets `apiKey` to it.
     providers = {
       openai = {
         baseUrl = "https://api.openai.com/v1";
-        apiKey = "OPENAI_API_KEY";
+        apiKeyFile = ./secrets/openai-key;
         api = "openai-completions";
         auth = "apiKey";
         models = [
@@ -117,7 +113,7 @@
 
       anthropic = {
         baseUrl = "https://api.anthropic.com/v1";
-        apiKey = "ANTHROPIC_API_KEY";
+        apiKeyFile = ./secrets/anthropic-key;
         api = "anthropic-messages";
         auth = "apiKey";
         models = [
@@ -137,9 +133,6 @@
         ];
       };
     };
-
-    # Shared context appended to omp's built-in system prompt
-    # sharedContext = ./path/to/context.md;
 
     enableFishIntegration = true;
   };

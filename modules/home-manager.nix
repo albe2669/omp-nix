@@ -15,6 +15,29 @@ with lib; let
 
   yaml = pkgs.formats.yaml {};
 
+  # Providers with an `apiKeyFile` get a deterministic env var name
+  # (OMP_<PROVIDER>_API_KEY) that the wrapper exports at runtime.
+  # The `apiKey` field in models.yml is set to this env var name;
+  # `apiKeyFile` is stripped from the YAML output.
+  providersWithKeyFile = filterAttrs (_: p: p ? apiKeyFile) cfg.providers;
+  apiKeyEnvVar = name: "OMP_${toUpper name}_API_KEY";
+  # Map env var name → file path, for the binary wrapper.
+  apiKeyEnvVars =
+    mapAttrs' (name: p: {
+      name = apiKeyEnvVar name;
+      value = p.apiKeyFile;
+    })
+    providersWithKeyFile;
+  # Providers with apiKeyFile replaced: apiKey = <env var>, apiKeyFile stripped.
+  providersYaml =
+    mapAttrs (
+      name: p:
+        if p ? apiKeyFile
+        then removeAttrs (p // {apiKey = apiKeyEnvVar name;}) ["apiKeyFile"]
+        else p
+    )
+    cfg.providers;
+
   # Build the config.yml attrset from typed options + freeform settings.
   # Only non-null values are included so omp uses its built-in defaults.
   settingsAttrset = let
@@ -361,40 +384,32 @@ in {
     };
 
     providers = mkOption {
-      type = types.attrs;
+      type = types.attrsOf (types.submodule {
+        freeformType = types.attrs;
+        options.apiKeyFile = mkOption {
+          type = types.nullOr types.path;
+          default = null;
+          description = ''
+            File path containing the API key for this provider. At runtime,
+            the omp binary is wrapped to export the key as the deterministic
+            environment variable `OMP_<PROVIDER>_API_KEY`, and the provider's
+            `apiKey` field is set to that variable name automatically.
+          '';
+        };
+      });
       default = {};
       description = ''
         Providers and models configuration, written to ~/.omp/agent/models.yml.
-        Shape matches omp's models-config-schema.ts:
+        Each provider supports a `apiKeyFile` option for loading the key from
+        a file at runtime. Shape matches omp's models-config-schema.ts:
         {
-          providers.corti = {
+          providers.openai = {
             baseUrl = "...";
-            apiKey = "ENV_VAR_NAME";
+            apiKeyFile = ./secrets/openai-key;  # → apiKey = OMP_OPENAI_API_KEY
             api = "openai-completions";
-            auth = "apiKey";
             models = [ { id = "..."; name = "..."; reasoning = true; ... } ];
           };
         }
-      '';
-    };
-
-    apiKeyFiles = mkOption {
-      type = types.attrsOf types.path;
-      default = {};
-      description = ''
-        Maps environment variable names to file paths containing API keys.
-        The omp binary is wrapped to export each env var at runtime by
-        reading the key from the given file. Reference the env var name in
-        your providers config's `apiKey` field.
-
-        Example:
-        ```nix
-        programs.omp.apiKeyFiles = {
-          OPENAI_API_KEY = ./secrets/openai-key;
-          ANTHROPIC_API_KEY = ./secrets/anthropic-key;
-        };
-        programs.omp.providers.openai.apiKey = "OPENAI_API_KEY";
-        ```
       '';
     };
 
@@ -435,10 +450,10 @@ in {
   config = mkIf cfg.enable (mkMerge [
     {
       # Wrap the omp binary to export API keys from file paths at runtime.
-      # When apiKeyFiles is empty, use the unwrapped package.
+      # When no providers use apiKeyFile, use the unwrapped package.
       home.packages = [
         (
-          if cfg.apiKeyFiles == {}
+          if apiKeyEnvVars == {}
           then cfg.package
           else
             (cfg.package.overrideAttrs (old: {
@@ -450,7 +465,7 @@ in {
                     ${concatStringsSep " \\\n  " (mapAttrsToList (
                       envVar: path: "--run 'export ${envVar}=$(cat ${path})'"
                     )
-                    cfg.apiKeyFiles)}
+                    apiKeyEnvVars)}
                 '';
             }))
         )
@@ -473,7 +488,7 @@ in {
         }
         // (optionalAttrs (cfg.providers != {}) {
           # Providers/models config: models.yml
-          ".omp/agent/models.yml".source = yaml.generate "models.yml" {providers = cfg.providers;};
+          ".omp/agent/models.yml".source = yaml.generate "models.yml" {providers = providersYaml;};
         })
         // (optionalAttrs (cfg.sharedContext != null) {
           # Shared context appended to the system prompt

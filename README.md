@@ -97,8 +97,7 @@ The home-manager module exposes `programs.omp` with:
 | `configFile` | path \| null | null | Override generated config.yml |
 | `extraConfig` | attrs | `{}` | Extra YAML keys for config.yml |
 | `settings` | submodule | `{}` | Typed + freeform settings → config.yml |
-| `apiKeyFiles` | attrsOf path | `{}` | Env var → file path; wraps binary to export keys |
-| `providers` | attrs | `{}` | Providers/models → models.yml |
+| `providers` | attrsOf submodule | `{}` | Providers/models → models.yml; supports `apiKeyFile` |
 | `sharedContext` | path \| null | null | APPEND_SYSTEM.md |
 | `hooks` | attrs | `{}` | Hook scripts in ~/.omp/hooks/ |
 | `enableFishIntegration` | bool | `false` | Fish shell helper functions |
@@ -146,24 +145,20 @@ programs.omp.settings = {
 
 ### API Keys
 
-API keys are loaded from file paths into environment variables at runtime.
-The omp binary is wrapped with `makeWrapper` to export each key:
+Set `apiKeyFile` on a provider to load its key from a file at runtime. The
+module generates a deterministic env var (`OMP_<PROVIDER>_API_KEY`), sets the
+provider's `apiKey` to that var name, and wraps the binary to export it:
 
 ```nix
-programs.omp = {
-  apiKeyFiles = {
-    OPENAI_API_KEY = ./secrets/openai-key;
-    ANTHROPIC_API_KEY = ./secrets/anthropic-key;
-  };
-  providers = {
-    openai.apiKey = "OPENAI_API_KEY";      # env var name, not the key
-    anthropic.apiKey = "ANTHROPIC_API_KEY";
-  };
+programs.omp.providers = {
+  openai.apiKeyFile = ./secrets/openai-key;       # → apiKey = OMP_OPENAI_API_KEY
+  anthropic.apiKeyFile = ./secrets/anthropic-key; # → apiKey = OMP_ANTHROPIC_API_KEY
 };
 ```
 
 This works well with `sops-nix`, `agenix`, or any secrets manager that
-materializes key files to the filesystem.
+materializes key files to the filesystem. You can still set `apiKey` directly
+(to an env var name) if you prefer to manage the environment yourself.
 
 ## Auto-Update
 
