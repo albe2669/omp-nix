@@ -9,15 +9,23 @@
   programs.omp = {
     enable = true;
 
+    # Load API keys from file paths into environment variables.
+    # The omp binary is wrapped to export these at runtime.
+    # Reference the env var names in your providers config below.
+    apiKeyFiles = {
+      OPENAI_API_KEY = ./secrets/openai-key;
+      ANTHROPIC_API_KEY = ./secrets/anthropic-key;
+    };
+
     settings = {
       modelRoles = {
-        default = "corti/corti-s1";
-        smol = "corti/corti-s1-mini";
-        slow = "corti/corti-s1";
-        plan = "corti/corti-s1";
-        task = "corti/corti-s1-mini";
-        commit = "corti/corti-s1-mini-instant";
-        tiny = "corti/corti-s1-mini-instant";
+        default = "openai/gpt-5.5";
+        smol = "openai/gpt-5.5-mini";
+        slow = "anthropic/claude-opus-4.5";
+        plan = "openai/gpt-5.5";
+        task = "openai/gpt-5.5-mini";
+        commit = "openai/gpt-5.5-mini";
+        tiny = "openai/gpt-5.5-mini";
       };
 
       tools.approvalMode = "yolo";
@@ -67,38 +75,63 @@
       setupVersion = 1;
     };
 
-    # Providers and models — written to ~/.omp/agent/models.yml
+    # Providers and models — written to ~/.omp/agent/models.yml.
+    # The `apiKey` field is an environment variable name (not the key
+    # itself). The env var is populated from the file path in
+    # `apiKeyFiles` above via a binary wrapper.
     providers = {
-      corti = {
-        baseUrl = "https://api.corti.ai/v1";
-        apiKey = "CORTI_API_KEY"; # env var name, not the key itself
+      openai = {
+        baseUrl = "https://api.openai.com/v1";
+        apiKey = "OPENAI_API_KEY";
         api = "openai-completions";
         auth = "apiKey";
         models = [
           {
-            id = "corti-s1";
-            name = "Corti S1 (GLM5.2)";
+            id = "gpt-5.5";
+            name = "GPT-5.5";
             reasoning = true;
-            input = ["text"];
-            contextWindow = 1000000;
+            input = ["text" "image"];
+            contextWindow = 400000;
             cost = {
-              input = 2;
-              output = 8;
-              cacheRead = 0.2;
-              cacheWrite = 0.2;
+              input = 2.5;
+              output = 10;
+              cacheRead = 0.3;
+              cacheWrite = 0.3;
             };
           }
           {
-            id = "corti-s1-mini";
-            name = "Corti S1 Mini (Qwen3.6)";
+            id = "gpt-5.5-mini";
+            name = "GPT-5.5 Mini";
             reasoning = true;
-            input = ["text"];
-            contextWindow = 1000000;
+            input = ["text" "image"];
+            contextWindow = 400000;
             cost = {
-              input = 1;
-              output = 4;
-              cacheRead = 0.1;
-              cacheWrite = 0.1;
+              input = 0.5;
+              output = 2;
+              cacheRead = 0.05;
+              cacheWrite = 0.05;
+            };
+          }
+        ];
+      };
+
+      anthropic = {
+        baseUrl = "https://api.anthropic.com/v1";
+        apiKey = "ANTHROPIC_API_KEY";
+        api = "anthropic-messages";
+        auth = "apiKey";
+        models = [
+          {
+            id = "claude-opus-4.5";
+            name = "Claude Opus 4.5";
+            reasoning = true;
+            input = ["text" "image"];
+            contextWindow = 200000;
+            cost = {
+              input = 15;
+              output = 75;
+              cacheRead = 1.5;
+              cacheWrite = 2;
             };
           }
         ];

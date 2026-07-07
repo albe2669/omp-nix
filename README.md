@@ -97,6 +97,7 @@ The home-manager module exposes `programs.omp` with:
 | `configFile` | path \| null | null | Override generated config.yml |
 | `extraConfig` | attrs | `{}` | Extra YAML keys for config.yml |
 | `settings` | submodule | `{}` | Typed + freeform settings → config.yml |
+| `apiKeyFiles` | attrsOf path | `{}` | Env var → file path; wraps binary to export keys |
 | `providers` | attrs | `{}` | Providers/models → models.yml |
 | `sharedContext` | path \| null | null | APPEND_SYSTEM.md |
 | `hooks` | attrs | `{}` | Hook scripts in ~/.omp/hooks/ |
@@ -142,6 +143,27 @@ programs.omp.settings = {
   "providers.tinyModel" = "online";
 };
 ```
+
+### API Keys
+
+API keys are loaded from file paths into environment variables at runtime.
+The omp binary is wrapped with `makeWrapper` to export each key:
+
+```nix
+programs.omp = {
+  apiKeyFiles = {
+    OPENAI_API_KEY = ./secrets/openai-key;
+    ANTHROPIC_API_KEY = ./secrets/anthropic-key;
+  };
+  providers = {
+    openai.apiKey = "OPENAI_API_KEY";      # env var name, not the key
+    anthropic.apiKey = "ANTHROPIC_API_KEY";
+  };
+};
+```
+
+This works well with `sops-nix`, `agenix`, or any secrets manager that
+materializes key files to the filesystem.
 
 ## Auto-Update
 

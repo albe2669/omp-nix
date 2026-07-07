@@ -378,6 +378,26 @@ in {
       '';
     };
 
+    apiKeyFiles = mkOption {
+      type = types.attrsOf types.path;
+      default = {};
+      description = ''
+        Maps environment variable names to file paths containing API keys.
+        The omp binary is wrapped to export each env var at runtime by
+        reading the key from the given file. Reference the env var name in
+        your providers config's `apiKey` field.
+
+        Example:
+        ```nix
+        programs.omp.apiKeyFiles = {
+          OPENAI_API_KEY = ./secrets/openai-key;
+          ANTHROPIC_API_KEY = ./secrets/anthropic-key;
+        };
+        programs.omp.providers.openai.apiKey = "OPENAI_API_KEY";
+        ```
+      '';
+    };
+
     sharedContext = mkOption {
       type = types.nullOr types.path;
       default = null;
@@ -414,7 +434,27 @@ in {
 
   config = mkIf cfg.enable (mkMerge [
     {
-      home.packages = [cfg.package];
+      # Wrap the omp binary to export API keys from file paths at runtime.
+      # When apiKeyFiles is empty, use the unwrapped package.
+      home.packages = [
+        (
+          if cfg.apiKeyFiles == {}
+          then cfg.package
+          else
+            (cfg.package.overrideAttrs (old: {
+              nativeBuildInputs = (old.nativeBuildInputs or []) ++ [pkgs.makeWrapper];
+              postFixup =
+                (old.postFixup or "")
+                + ''
+                  wrapProgram $out/bin/omp \
+                    ${concatStringsSep " \\\n  " (mapAttrsToList (
+                      envVar: path: "--run 'export ${envVar}=$(cat ${path})'"
+                    )
+                    cfg.apiKeyFiles)}
+                '';
+            }))
+        )
+      ];
 
       # All ~/.omp/ files are built into a single home.file attrset to avoid
       # duplicate-attribute conflicts when evaluated outside home-manager's
