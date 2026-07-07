@@ -6,7 +6,7 @@
   "platforms": {
     "x86_64-linux": {
       "node": "linux-x64-baseline",
-      "bunChecksum": "sha256-/c4UPGYLgBpluNputevnq0VxBIvq+wasQib/B4BsQUY=",
+      "bunChecksum": "sha256-czKDGmSUD5FkpdQFN78zTkZaAHE9IfwJu418v1Nr2NM=",
       "bunSrcUrl": "bun-linux-x64.zip",
       "bunSrcHash": "sha256-lR7iruhV8IWVruxiJSJqKY0/6oOj3NZGXAnLzN9+hI8="
     },
