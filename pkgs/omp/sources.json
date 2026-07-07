@@ -24,7 +24,7 @@
     },
     "aarch64-darwin": {
       "node": "darwin-arm64",
-      "bunChecksum": "sha256-S+ptZXObcOlZ7rRDK3ro7ORrUWEzwYC8iDmGgLZQKJw=",
+      "bunChecksum": "sha256-yZEHBv8vmboXB0uOGTG6P86Q0bD1vZGx5SWLFhO7GCI=",
       "bunSrcUrl": "bun-darwin-aarch64.zip",
       "bunSrcHash": "sha256-2LliIYKK1vl6x6wKt+lYcjQa92MAHogD6CZ2UsJlJiA="
     }
