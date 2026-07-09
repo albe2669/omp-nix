@@ -66,35 +66,36 @@ compute_bun_deps_checksum() {
 
     # Build the bunDeps FOD and capture the error output containing the correct hash.
     local output
-    output=$(nix build --impure --expr "
-        { pkgs ? import (builtins.getFlake (toString ./.)).inputs.nixpkgs {} }:
+    output=$(nix build --impure --expr '
+        { pkgs ? import (builtins.getFlake (toString ./.)).inputs.nixpkgs {}
+        , system ? builtins.currentSystem
+        }:
         let
-          lib = pkgs.lib;
           stdenvNoCC = pkgs.stdenvNoCC;
           sources = builtins.fromJSON (builtins.readFile ./pkgs/omp/sources.json);
-          platformSpecific = sources.platforms.${"\"$system\""};
+          platformSpecific = sources.platforms.${system};
           bunVersion = sources.bunVersion;
           bunSrc = pkgs.fetchurl {
-            url = \"https://github.com/oven-sh/bun/releases/download/bun-v\${bunVersion}/\${platformSpecific.bunSrcUrl}\";
+            url = "https://github.com/oven-sh/bun/releases/download/bun-v${bunVersion}/${platformSpecific.bunSrcUrl}";
             hash = platformSpecific.bunSrcHash;
           };
           bun = pkgs.bun.overrideAttrs (_: { version = bunVersion; src = bunSrc; });
         in stdenvNoCC.mkDerivation {
-          name = \"omp-bun-deps-\${sources.version}\";
+          name = "omp-bun-deps-${sources.version}";
           src = pkgs.fetchFromGitHub {
-            owner = \"can1357\";
-            repo = \"oh-my-pi\";
-            rev = \"v\${sources.version}\";
+            owner = "can1357";
+            repo = "oh-my-pi";
+            rev = "v${sources.version}";
             hash = sources.srcHash;
           };
           nativeBuildInputs = [bun];
-          buildPhase = ''export HOME=\$(mktemp -d); bun install --frozen-lockfile --no-progress'';
-          installPhase = ''rm -rf node_modules/@oh-my-pi; rm -f node_modules/robomp-web; find node_modules/.bin -maxdepth 1 -type l ! -exec test -e {} \; -delete; cp -r node_modules \$out'';
-          outputHash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";
-          outputHashMode = \"recursive\";
-          outputHashAlgo = \"sha256\";
+          buildPhase = '"'"'export HOME=$(mktemp -d); bun install --frozen-lockfile --no-progress'"'"';
+          installPhase = '"'"'rm -rf node_modules/@oh-my-pi; rm -f node_modules/robomp-web; find node_modules/.bin -maxdepth 1 -type l ! -exec test -e {} \; -delete; cp -r node_modules $out'"'"';
+          outputHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+          outputHashMode = "recursive";
+          outputHashAlgo = "sha256";
         }
-    " 2>&1 || true)
+    ' --argstr system "$system" 2>&1 || true)
 
     # Extract the "got:" hash from the error output.
     local hash
@@ -142,7 +143,7 @@ main() {
     if [ -n "$bun_checksum_only" ]; then
         log_info "Computing bunChecksum for $bun_checksum_only..."
         local bun_checksum
-        bun_checksum=$(compute_bun_deps_checksum "$bun_checksum_only" "$SOURCES_FILE" 2>&1 || true)
+        bun_checksum=$(compute_bun_deps_checksum "$bun_checksum_only" "$SOURCES_FILE" || true)
         if [ -n "$bun_checksum" ]; then
             log_info "  $bun_checksum_only bunChecksum: $bun_checksum"
             tmp=$(mktemp)
@@ -247,28 +248,28 @@ main() {
     if [ -n "$current_system" ]; then
         log_info "Computing cargo hash..."
         local cargo_output
-        cargo_output=$(nix build --impure --expr "
+        cargo_output=$(nix build --impure --expr '
             { pkgs ? import (builtins.getFlake (toString ./.)).inputs.nixpkgs {} }:
             let
               sources = builtins.fromJSON (builtins.readFile ./pkgs/omp/sources.json);
               src = pkgs.fetchFromGitHub {
-                owner = \"can1357\";
-                repo = \"oh-my-pi\";
-                rev = \"v\${sources.version}\";
+                owner = "can1357";
+                repo = "oh-my-pi";
+                rev = "v${sources.version}";
                 hash = sources.srcHash;
               };
             in pkgs.rustPlatform.buildRustPackage {
-              pname = \"pi-natives\";
+              pname = "pi-natives";
               version = sources.version;
               inherit src;
-              cargoHash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";
-              env.RUSTC_BOOTSTRAP = \"1\";
-              cargoBuildFlags = [\"--package\" \"pi-natives\" \"--lib\"];
+              cargoHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+              env.RUSTC_BOOTSTRAP = "1";
+              cargoBuildFlags = ["--package" "pi-natives" "--lib"];
               nativeBuildInputs = [pkgs.nodejs pkgs.pkg-config];
               buildInputs = [pkgs.openssl];
               doCheck = false;
             }
-        " 2>&1 || true)
+        ' 2>&1 || true)
         local cargo_hash
         cargo_hash=$(echo "$cargo_output" | grep -oP 'got:\s+\Ksha256-[A-Za-z0-9+/=]+' | head -1)
         if [ -n "$cargo_hash" ]; then
