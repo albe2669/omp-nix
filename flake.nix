@@ -21,7 +21,10 @@
       "aarch64-darwin"
     ];
 
-    overlay = final: prev: (import ./pkgs/default.nix { pkgs = final; lib = final.lib; });
+    overlay = final: prev: (import ./pkgs/default.nix {
+      pkgs = final;
+      lib = final.lib;
+    });
   in
     {
       overlays.default = overlay;
