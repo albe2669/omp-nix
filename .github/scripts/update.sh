@@ -2,10 +2,10 @@
 # Update omp version and hashes in pkgs/omp/sources.json.
 #
 # Usage:
-#   ./.github/scripts/update.sh          # Update to latest version
-#   ./.github/scripts/update.sh --check  # Exit 1 if update available, 0 if up-to-date
-#
-# Requires: nix, nix-prefetch-url, curl, jq
+#   ./.github/scripts/update.sh                              # Update to latest version
+#   ./.github/scripts/update.sh --check                      # Exit 1 if update available, 0 if up-to-date
+#   ./.github/scripts/update.sh --no-bun-checksum            # Update everything except bunChecksums
+#   ./.github/scripts/update.sh --bun-checksum-only <system>  # Only compute bunChecksum for the given system
 set -euo pipefail
 
 readonly REPO_OWNER="can1357"
@@ -111,18 +111,50 @@ compute_bun_deps_checksum() {
 
 main() {
     local check_only=false
+    local no_bun_checksum=false
+    local bun_checksum_only=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --check) check_only=true; shift ;;
+            --no-bun-checksum) no_bun_checksum=true; shift ;;
+            --bun-checksum-only)
+                shift
+                [[ $# -gt 0 ]] || { log_error "--bun-checksum-only requires a system argument"; exit 1; }
+                bun_checksum_only="$1"
+                shift
+                ;;
             --help)
-                echo "Usage: $0 [--check]"
-                echo "  --check  Only check if update is available (exit 1 if yes)"
+                echo "Usage: $0 [--check|--no-bun-checksum|--bun-checksum-only <system>]"
+                echo "  --check                  Only check if update is available (exit 1 if yes)"
+                echo "  --no-bun-checksum        Update everything except platform bunChecksums"
+                echo "  --bun-checksum-only SYS  Only compute bunChecksum for system SYS"
                 exit 0
                 ;;
             *) log_error "Unknown option: $1"; exit 1 ;;
         esac
     done
+
+    # --bun-checksum-only: compute bunChecksum for a single system and exit.
+    # This is used by the matrix job in CI — each runner computes only its
+    # own platform's hash (bunChecksum is platform-specific because
+    # node_modules contains platform-native binaries).
+    if [ -n "$bun_checksum_only" ]; then
+        log_info "Computing bunChecksum for $bun_checksum_only..."
+        local bun_checksum
+        bun_checksum=$(compute_bun_deps_checksum "$bun_checksum_only" "$SOURCES_FILE" 2>&1 || true)
+        if [ -n "$bun_checksum" ]; then
+            log_info "  $bun_checksum_only bunChecksum: $bun_checksum"
+            tmp=$(mktemp)
+            jq --arg sys "$bun_checksum_only" --arg h "$bun_checksum" \
+                '.platforms[$sys].bunChecksum = $h' "$SOURCES_FILE" > "$tmp"
+            mv "$tmp" "$SOURCES_FILE"
+        else
+            log_error "Failed to compute bunChecksum for $bun_checksum_only"
+            exit 1
+        fi
+        exit 0
+    fi
 
     local current_version latest_version
     current_version=$(get_current_version)
@@ -188,15 +220,14 @@ main() {
         mv "$tmp" "$SOURCES_FILE"
     done
 
-    # 4. Compute bunDeps FOD checksums per platform (this builds the FOD)
-    # NOTE: This step is expensive and requires Nix. In CI it runs on
-    # ubuntu-latest. For platforms without native runners (aarch64-linux,
-    # x86_64-darwin), we can't compute the hash directly — we'd need
-    # remote builders or cross-compilation. For now, only compute for the
-    # current system and leave others as placeholders.
+    # 4. Compute bunDeps FOD checksums — only when not skipped.
+    # bunChecksum is platform-specific (node_modules contains platform-native
+    # binaries like @biomejs/cli-linux-x64). In CI, the --no-bun-checksum
+    # flag skips this step; a separate matrix job computes each platform's
+    # hash via --bun-checksum-only.
     local current_system
     current_system=$(nix eval --impure --expr 'builtins.currentSystem' 2>/dev/null || echo "")
-    if [ -n "$current_system" ]; then
+    if [ "$no_bun_checksum" = false ] && [ -n "$current_system" ]; then
         log_info "Computing bun deps checksum for $current_system..."
         local bun_checksum
         bun_checksum=$(compute_bun_deps_checksum "$current_system" "$SOURCES_FILE" 2>/dev/null || true)
@@ -207,15 +238,14 @@ main() {
                 '.platforms[$sys].bunChecksum = $h' "$SOURCES_FILE" > "$tmp"
             mv "$tmp" "$SOURCES_FILE"
         else
-            log_warn "Could not compute bun deps checksum for $current_system (will be computed during build)"
+            log_warn "Could not compute bun deps checksum for $current_system"
         fi
     fi
 
-    # 5. Compute cargo hash (build the Rust FOD)
-    # This also requires building the FOD. Like the bun deps checksum, it
-    # can only be done for the current system.
+    # 5. Compute cargo hash (build the Rust FOD).
+    # cargoHash is the hash of the cargo vendor directory — platform-independent.
     if [ -n "$current_system" ]; then
-        log_info "Computing cargo hash for $current_system..."
+        log_info "Computing cargo hash..."
         local cargo_output
         cargo_output=$(nix build --impure --expr "
             { pkgs ? import (builtins.getFlake (toString ./.)).inputs.nixpkgs {} }:
@@ -247,14 +277,9 @@ main() {
             jq --arg h "$cargo_hash" '.cargoHash = $h' "$SOURCES_FILE" > "$tmp"
             mv "$tmp" "$SOURCES_FILE"
         else
-            log_warn "Could not compute cargo hash (will be computed during build)"
+            log_error "Failed to compute cargo hash"
+            exit 1
         fi
-    fi
-
-    # 6. Update flake.lock
-    if command -v nix >/dev/null 2>&1; then
-        log_info "Updating flake.lock..."
-        nix flake update || true
     fi
 
     log_info "Successfully updated omp from $current_version to $latest_version"

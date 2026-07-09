@@ -10,7 +10,12 @@ permissions:
   pull-requests: write
 
 jobs:
-  check-and-update:
+  # ── Job 1: Check for updates & compute platform-independent hashes ────────
+  # srcHash, cargoHash, and all bunSrcHashes are platform-independent.
+  # The bunChecksum (FOD hash of `bun install` output) is platform-specific
+  # because node_modules contains platform-native binaries (e.g.
+  # @biomejs/cli-linux-x64). It's computed in the next job on a matrix.
+  check:
     runs-on: ubuntu-latest
     outputs:
       update_needed: ${{ steps.check.outputs.update_needed }}
@@ -45,34 +50,130 @@ jobs:
             echo "update_needed=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Update version and hashes
+      - name: Update version, srcHash, bunSrcHashes, cargoHash
         if: steps.check.outputs.update_needed == 'true'
+        run: ./.github/scripts/update.sh --no-bun-checksum
+
+      - name: Upload sources.json
+        if: steps.check.outputs.update_needed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sources-base
+          path: pkgs/omp/sources.json
+
+  # ── Job 2: Compute platform-specific bunChecksums ──────────────────────
+  # bunChecksum is the FOD hash of `bun install` output, which includes
+  # platform-native binaries. Each runner computes only its own platform.
+  compute-checksums:
+    needs: check
+    if: needs.check.outputs.update_needed == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            nix-system: x86_64-linux
+          - os: macos-latest
+            nix-system: aarch64-darwin
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download sources.json
+        uses: actions/download-artifact@v4
+        with:
+          name: sources-base
+          path: pkgs/omp/
+
+      - name: Setup Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixpkgs-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute bunChecksum for ${{ matrix.nix-system }}
+        run: ./.github/scripts/update.sh --bun-checksum-only ${{ matrix.nix-system }}
+
+      - name: Copy sources.json
+        run: cp pkgs/omp/sources.json ${{ matrix.nix-system }}.json
+
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksum-${{ matrix.nix-system }}
+          path: ${{ matrix.nix-system }}.json
+
+  # ── Job 3: Merge all checksums, update flake.lock, create PR ──────────
+  merge-and-pr:
+    needs: [check, compute-checksums]
+    if: needs.check.outputs.update_needed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download base sources.json
+        uses: actions/download-artifact@v4
+        with:
+          name: sources-base
+          path: pkgs/omp/
+
+      - name: Setup Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixpkgs-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge all checksums
+        uses: actions/download-artifact@v4
+        with:
+          pattern: checksum-*
+          path: checksums/
+          merge-multiple: false
+
+      - name: Apply checksums to sources.json
         run: |
-          ./.github/scripts/update.sh
+          for system in x86_64-linux aarch64-darwin; do
+            file="checksums/checksum-$system/$system.json"
+            if [ -f "$file" ]; then
+              hash=$(jq -r --arg sys "$system" '.platforms[$sys].bunChecksum' "$file")
+              tmp=$(mktemp)
+              jq --arg sys "$system" --arg h "$hash" '.platforms[$sys].bunChecksum = $h' pkgs/omp/sources.json > "$tmp"
+              mv "$tmp" pkgs/omp/sources.json
+              echo "  $system: $hash"
+            fi
+          done
+
+      - name: Update flake.lock
+        run: nix flake update
 
       - name: Create Pull Request
-        if: steps.check.outputs.update_needed == 'true'
         id: create-pr
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore: update omp to v${{ steps.check.outputs.latest_version }}"
-          title: "chore: update omp to v${{ steps.check.outputs.latest_version }}"
+          commit-message: "chore: update omp to v${{ needs.check.outputs.latest_version }}"
+          title: "chore: update omp to v${{ needs.check.outputs.latest_version }}"
           body: |
             ## Automated omp Update
 
-            Updates oh-my-pi from `v${{ steps.check.outputs.current_version }}` to `v${{ steps.check.outputs.latest_version }}`.
+            Updates oh-my-pi from `v${{ needs.check.outputs.current_version }}` to `v${{ needs.check.outputs.latest_version }}`.
 
             ### Changes
             - Updated `version` in `pkgs/omp/sources.json`
             - Updated source hash (`srcHash`)
             - Updated cargo hash (`cargoHash`)
-            - Updated per-platform bun checksums and bun source hashes
+            - Updated per-platform bun source hashes (`bunSrcHash`)
+            - Updated per-platform bun checksums (`bunChecksum`) — computed on a Linux + macOS matrix
             - Updated `flake.lock`
 
             ### Verification
             - ✅ Hashes computed via `nix store prefetch-file` and FOD builds
-            - ✅ Build verified by the `build.yml` workflow on this PR
+            - ✅ Build verified by the `Build and Test` workflow on this PR
 
             ---
 
@@ -83,14 +184,14 @@ jobs:
             ```
 
             This PR was automatically generated by the update workflow.
-          branch: update-omp-${{ steps.check.outputs.latest_version }}
+          branch: update-omp-${{ needs.check.outputs.latest_version }}
           delete-branch: true
           labels: |
             dependencies
             automated
 
       - name: Enable Auto-Merge
-        if: steps.check.outputs.update_needed == 'true' && steps.create-pr.outputs.pull-request-number
+        if: steps.create-pr.outputs.pull-request-number
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
