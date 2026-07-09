@@ -57,45 +57,46 @@ prefetch_bun_src_hash() {
 # the "got" hash from the error output. This is standard nixpkgs FOD practice.
 compute_bun_deps_checksum() {
     local system="$1"
-    local nix_file="$2"
 
-    # Set a fake hash to force a hash mismatch error, which reveals the real hash.
-    local tmp_sources=$(mktemp)
-    jq --arg sys "$system" '.platforms[$sys].bunChecksum = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="' \
-        "$SOURCES_FILE" > "$tmp_sources"
+    # Write the nix expression to a temp file to avoid bash/nix quoting conflicts.
+    local nix_file
+    nix_file=$(mktemp -t omp-bun-deps.XXXXXXXX)
+    cat > "$nix_file" <<'NIX'
+    { pkgs ? import (builtins.getFlake repoDir).inputs.nixpkgs {}
+    , system ? builtins.currentSystem
+    , repoDir ? toString ./.
+    }: let
+      stdenvNoCC = pkgs.stdenvNoCC;
+      sources = builtins.fromJSON (builtins.readFile (repoDir + "/pkgs/omp/sources.json"));
+      platformSpecific = sources.platforms.${system};
+      bunVersion = sources.bunVersion;
+      bunSrc = pkgs.fetchurl {
+        url = "https://github.com/oven-sh/bun/releases/download/bun-v${bunVersion}/${platformSpecific.bunSrcUrl}";
+        hash = platformSpecific.bunSrcHash;
+      };
+      bun = pkgs.bun.overrideAttrs (_: { version = bunVersion; src = bunSrc; });
+    in stdenvNoCC.mkDerivation {
+      name = "omp-bun-deps-${sources.version}";
+      src = pkgs.fetchFromGitHub {
+        owner = "can1357";
+        repo = "oh-my-pi";
+        rev = "v${sources.version}";
+        hash = sources.srcHash;
+      };
+      nativeBuildInputs = [bun];
+      buildPhase = "export HOME=$(mktemp -d); bun install --frozen-lockfile --no-progress";
+      installPhase = "rm -rf node_modules/@oh-my-pi; rm -f node_modules/robomp-web; find node_modules/.bin -maxdepth 1 -type l ! -exec test -e {} \\; -delete; cp -r node_modules $out";
+      outputHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+      outputHashMode = "recursive";
+      outputHashAlgo = "sha256";
+    }
+NIX
 
     # Build the bunDeps FOD and capture the error output containing the correct hash.
-    local output
-    output=$(nix build --impure --expr '
-        { pkgs ? import (builtins.getFlake (toString ./.)).inputs.nixpkgs {}
-        , system ? builtins.currentSystem
-        }:
-        let
-          stdenvNoCC = pkgs.stdenvNoCC;
-          sources = builtins.fromJSON (builtins.readFile ./pkgs/omp/sources.json);
-          platformSpecific = sources.platforms.${system};
-          bunVersion = sources.bunVersion;
-          bunSrc = pkgs.fetchurl {
-            url = "https://github.com/oven-sh/bun/releases/download/bun-v${bunVersion}/${platformSpecific.bunSrcUrl}";
-            hash = platformSpecific.bunSrcHash;
-          };
-          bun = pkgs.bun.overrideAttrs (_: { version = bunVersion; src = bunSrc; });
-        in stdenvNoCC.mkDerivation {
-          name = "omp-bun-deps-${sources.version}";
-          src = pkgs.fetchFromGitHub {
-            owner = "can1357";
-            repo = "oh-my-pi";
-            rev = "v${sources.version}";
-            hash = sources.srcHash;
-          };
-          nativeBuildInputs = [bun];
-          buildPhase = '"'"'export HOME=$(mktemp -d); bun install --frozen-lockfile --no-progress'"'"';
-          installPhase = '"'"'rm -rf node_modules/@oh-my-pi; rm -f node_modules/robomp-web; find node_modules/.bin -maxdepth 1 -type l ! -exec test -e {} \; -delete; cp -r node_modules $out'"'"';
-          outputHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-          outputHashMode = "recursive";
-          outputHashAlgo = "sha256";
-        }
-    ' --argstr system "$system" 2>&1 || true)
+    output=$(nix build --impure --no-link --expr "$(cat "$nix_file")" \
+        --argstr system "$system" \
+        --argstr repoDir "$(pwd)" 2>&1 || true)
+    rm -f "$nix_file"
 
     # Extract the "got:" hash from the error output.
     local hash
