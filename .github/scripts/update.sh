@@ -39,9 +39,8 @@ get_bun_version() {
 prefetch_src_hash() {
     local version="$1"
     local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/v${version}.tar.gz"
-    nix-prefetch-url --type sha256 --unpack "$url" 2>/dev/null \
-    | nix hash to-sri --type sha256 2>/dev/null \
-    | tr -d '\n'
+    nix store prefetch-file --json --hash-type sha256 --unpack "$url" 2>/dev/null \
+    | jq -r '.hash'
 }
 
 # Prefetch a single bun source ZIP hash.
@@ -49,10 +48,10 @@ prefetch_bun_src_hash() {
     local bun_version="$1"
     local bun_src_url="$2"
     local url="https://github.com/${BUN_REPO}/releases/download/bun-v${bun_version}/${bun_src_url}"
-    nix-prefetch-url --type sha256 "$url" 2>/dev/null \
-    | nix hash to-sri --type sha256 2>/dev/null \
-    | tr -d '\n'
+    nix store prefetch-file --json --hash-type sha256 "$url" 2>/dev/null \
+    | jq -r '.hash'
 }
+
 
 # Compute the bunDeps FOD checksum by building with a fake hash and reading
 # the "got" hash from the error output. This is standard nixpkgs FOD practice.
@@ -217,8 +216,8 @@ main() {
     # can only be done for the current system.
     if [ -n "$current_system" ]; then
         log_info "Computing cargo hash for $current_system..."
-        local cargo_hash
-        cargo_hash=$(nix build --impure --expr "
+        local cargo_output
+        cargo_output=$(nix build --impure --expr "
             { pkgs ? import (builtins.getFlake (toString ./.)).inputs.nixpkgs {} }:
             let
               sources = builtins.fromJSON (builtins.readFile ./pkgs/omp/sources.json);
@@ -239,7 +238,9 @@ main() {
               buildInputs = [pkgs.openssl];
               doCheck = false;
             }
-        " 2>&1 || true | grep -oP 'got:\s+\Ksha256-[A-Za-z0-9+/=]+' | head -1)
+        " 2>&1 || true)
+        local cargo_hash
+        cargo_hash=$(echo "$cargo_output" | grep -oP 'got:\s+\Ksha256-[A-Za-z0-9+/=]+' | head -1)
         if [ -n "$cargo_hash" ]; then
             log_info "  cargoHash: $cargo_hash"
             tmp=$(mktemp)

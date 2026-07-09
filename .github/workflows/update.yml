@@ -71,7 +71,7 @@ jobs:
             - Updated `flake.lock`
 
             ### Verification
-            - ✅ Hashes computed via `nix-prefetch-url` and FOD builds
+            - ✅ Hashes computed via `nix store prefetch-file` and FOD builds
             - ✅ Build verified by the `build.yml` workflow on this PR
 
             ---
