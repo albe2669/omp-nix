@@ -100,7 +100,7 @@ NIX
 
     # Extract the "got:" hash from the error output.
     local hash
-    hash=$(echo "$output" | grep -oP 'got:\s+\Ksha256-[A-Za-z0-9+/=]+' | head -1)
+    hash=$(echo "$output" | grep -oE 'got:\s+sha256-[A-Za-z0-9+/=]+' | sed 's/.*got:[[:space:]]*//' | head -1)
     if [ -z "$hash" ]; then
         log_error "Failed to compute bun deps checksum for $system"
         echo "$output" >&2
@@ -272,7 +272,7 @@ main() {
             }
         ' 2>&1 || true)
         local cargo_hash
-        cargo_hash=$(echo "$cargo_output" | grep -oP 'got:\s+\Ksha256-[A-Za-z0-9+/=]+' | head -1)
+        cargo_hash=$(echo "$cargo_output" | grep -oE 'got:\s+sha256-[A-Za-z0-9+/=]+' | sed 's/.*got:[[:space:]]*//' | head -1)
         if [ -n "$cargo_hash" ]; then
             log_info "  cargoHash: $cargo_hash"
             tmp=$(mktemp)
