@@ -22,3 +22,4 @@ Thumbs.db
 # Temporary
 *.tmp
 *.log
+checksums/
