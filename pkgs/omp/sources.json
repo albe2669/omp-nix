@@ -1,7 +1,7 @@
 {
-  "version": "16.3.11",
-  "srcHash": "sha256-pSB62I+idIEXnjaVL9MP2Lvdq31NNrWSaYVL/8u+YO8=",
-  "cargoHash": "sha256-tBBZSEOHogOw1/xEHf+bupHN8ABwrI5PEv9VC4BIsps=",
+  "version": "16.3.12",
+  "srcHash": "sha256-fawj6MZQ77BuytQus0e5JuRhRDWkAzm03M8nWb1Iipw=",
+  "cargoHash": "sha256-yaR4KAmN+uMiqSziJus9K/nLZpqr4Hf+OePOI0kaenY=",
   "bunVersion": "1.3.14",
   "platforms": {
     "x86_64-linux": {
@@ -14,13 +14,13 @@
       "node": "linux-arm64",
       "bunChecksum": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       "bunSrcUrl": "bun-linux-aarch64.zip",
-      "bunSrcHash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      "bunSrcHash": "sha256-on/7Y6gxA3WDbg1vZorhf6jY0YuIw3yCHGUzGXOhmjs="
     },
     "x86_64-darwin": {
       "node": "darwin-x64-baseline",
       "bunChecksum": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       "bunSrcUrl": "bun-darwin-x64-baseline.zip",
-      "bunSrcHash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      "bunSrcHash": "sha256-PjWtb1OXGpg0v55nhuKt9ytfGSHMmpxf3gc9KXKUQHY="
     },
     "aarch64-darwin": {
       "node": "darwin-arm64",
